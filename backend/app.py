@@ -34,6 +34,28 @@ def get_drivers():
     finally:
         cursor.close()
         conn.close()
+        
+from flask import request
+
+# --- TRIPS ENDPOINT ---
+@app.route('/api/trips', methods=['GET'])
+def get_trips():
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    try:
+        # dictionary=True formats the SQL rows perfectly for JSON
+        cursor = conn.cursor(dictionary=True) 
+        cursor.execute("SELECT * FROM trips")
+        trips = cursor.fetchall()
+        
+        return {"data": trips}, 200
+        
+    except Exception as e:
+        return {"error": str(e)}, 500
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
 
 # ==========================================
 # POST ROUTES (The Core Engine)
@@ -103,75 +125,104 @@ def dispatch_trip():
     finally:
         cursor.close()
         conn.close()
-        
-@app.route('/api/maintenance', methods=['POST'])
-def add_maintenance():
-    data = request.json
-    vehicle_id = data.get('vehicle_id')
-    description = data.get('description')
-    cost = float(data.get('cost', 0))
-    log_date = data.get('log_date')
-    
+
+@app.route('/api/maintenance', methods=['GET', 'POST'])
+def handle_maintenance():
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
         
-    cursor = conn.cursor()
-    
     try:
-        # 1. Insert the Maintenance Log
-        log_query = """
-            INSERT INTO Maintenance_Logs (vehicle_id, description, cost, log_date)
-            VALUES (%s, %s, %s, %s)
-        """
-        cursor.execute(log_query, (vehicle_id, description, cost, log_date))
-        
-        # 2. Update Vehicle Status to 'In Shop'
-        cursor.execute("UPDATE Vehicles SET status = 'In Shop' WHERE id = %s", (vehicle_id,))
-        
-        # 3. Commit the transaction
-        conn.commit()
-        return jsonify({"message": "Maintenance logged and vehicle moved to In Shop!"}), 201
-        
+        # --- GET: Fetch all maintenance logs ---
+        if request.method == 'GET':
+            # dictionary=True maps the SQL rows directly into JSON objects for the frontend
+            cursor = conn.cursor(dictionary=True)
+            
+            # Ordering by date descending is a great touch for the UI dashboard
+            cursor.execute("SELECT * FROM Maintenance_Logs ORDER BY log_date DESC")
+            logs = cursor.fetchall()
+            cursor.close()
+            
+            return jsonify({"data": logs}), 200
+
+        # --- POST: Add a new maintenance log ---
+        elif request.method == 'POST':
+            cursor = conn.cursor()
+            data = request.json
+            vehicle_id = data.get('vehicle_id')
+            description = data.get('description')
+            cost = float(data.get('cost', 0))
+            log_date = data.get('log_date')
+            
+            # 1. Insert the Maintenance Log
+            log_query = """
+                INSERT INTO Maintenance_Logs (vehicle_id, description, cost, log_date)
+                VALUES (%s, %s, %s, %s)
+            """
+            cursor.execute(log_query, (vehicle_id, description, cost, log_date))
+            
+            # 2. Update Vehicle Status to 'In Shop'
+            cursor.execute("UPDATE Vehicles SET status = 'In Shop' WHERE id = %s", (vehicle_id,))
+            
+            # 3. Commit the transaction
+            conn.commit()
+            cursor.close()
+            
+            return jsonify({"message": "Maintenance logged and vehicle moved to In Shop!"}), 201
+            
     except Exception as e:
-        conn.rollback()
-        return jsonify({"error": "Failed to log maintenance", "details": str(e)}), 500
+        conn.rollback() # Protects your database if something breaks midway
+        return jsonify({"error": "Database operation failed", "details": str(e)}), 500
         
     finally:
-        cursor.close()
+        # Ensure the connection is always closed, preventing memory leaks
         conn.close()
         
-@app.route('/api/fuel', methods=['POST'])
-def add_fuel_log():
-    data = request.json
-    vehicle_id = data.get('vehicle_id')
-    liters = float(data.get('liters', 0))
-    cost = float(data.get('cost', 0))
-    log_date = data.get('log_date')
-    
+
+@app.route('/api/fuel', methods=['GET', 'POST'])
+def handle_fuel_log():
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
         
-    cursor = conn.cursor()
-    
     try:
-        log_query = """
-            INSERT INTO Fuel_Logs (vehicle_id, liters, cost, log_date)
-            VALUES (%s, %s, %s, %s)
-        """
-        cursor.execute(log_query, (vehicle_id, liters, cost, log_date))
-        
-        conn.commit()
-        return jsonify({"message": "Fuel log added successfully!"}), 201
-        
+        # --- GET: Fetch all fuel logs ---
+        if request.method == 'GET':
+            cursor = conn.cursor(dictionary=True)
+            # Ordering by date descending keeps the UI dashboard fresh
+            cursor.execute("SELECT * FROM Fuel_Logs ORDER BY log_date DESC")
+            logs = cursor.fetchall()
+            cursor.close()
+            
+            return jsonify({"data": logs}), 200
+
+        # --- POST: Add a new fuel log ---
+        elif request.method == 'POST':
+            cursor = conn.cursor()
+            data = request.json
+            vehicle_id = data.get('vehicle_id')
+            liters = float(data.get('liters', 0))
+            cost = float(data.get('cost', 0))
+            log_date = data.get('log_date')
+            
+            log_query = """
+                INSERT INTO Fuel_Logs (vehicle_id, liters, cost, log_date)
+                VALUES (%s, %s, %s, %s)
+            """
+            cursor.execute(log_query, (vehicle_id, liters, cost, log_date))
+            
+            conn.commit()
+            cursor.close()
+            
+            return jsonify({"message": "Fuel log added successfully!"}), 201
+            
     except Exception as e:
-        conn.rollback()
-        return jsonify({"error": "Failed to log fuel", "details": str(e)}), 500
+        conn.rollback() # Undo any partial database changes if an error occurs
+        return jsonify({"error": "Failed to process fuel log", "details": str(e)}), 500
         
     finally:
-        cursor.close()
         conn.close()
+        
         
 @app.route('/api/dashboard/stats', methods=['GET'])
 def get_dashboard_stats():
