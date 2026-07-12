@@ -1,0 +1,27 @@
+.card-box{
+    border:none;
+    border-radius:15px;
+    box-shadow:0 6px 20px rgba(0,0,0,.08);
+    transition:.3s;
+}
+
+.card-box:hover{
+    transform:translateY(-5px);
+}
+
+.card-title{
+    color:gray;
+    font-size:15px;
+}
+
+.card-number{
+    font-size:32px;
+    font-weight:bold;
+}
+
+.section-card{
+    background:white;
+    border-radius:15px;
+    padding:20px;
+    box-shadow:0 5px 20px rgba(0,0,0,.08);
+}
